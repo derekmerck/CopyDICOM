@@ -3,7 +3,6 @@ import requests
 from posixpath import join as urljoin
 from urlparse import urlsplit
 
-
 class OrthancSession(requests.Session):
 
     def __init__(self, address):
