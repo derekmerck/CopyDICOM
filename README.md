@@ -72,7 +72,9 @@ If structured dose reports are included in the archive monitored by `CopyDICOM r
 
 ## Testing
 
-An Ansible playbook is included that sets up Docker containers for an Orthanc source (8042), and Orthanc destination (8043), and a Splunk index (8000/8089) for testing.  Sample data is automatically loaded into the Orthanc source, but the paths are currently hardcoded for my development system, so other users will need to modify them.
+An [Ansible][] playbook is included that sets up local Docker containers for an Orthanc source (8042), and Orthanc destination (8043), and a Splunk index (8000/8089) for testing.  Sample data is automatically loaded into the Orthanc source, but the paths are currently hardcoded for my development system, so other users will need to modify them.
+
+[Ansible]: https://github.com/ansible/ansible
 
 ````bash
 $ ansible-playbook testbench.yml 
