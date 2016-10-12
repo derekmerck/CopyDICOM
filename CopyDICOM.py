@@ -16,8 +16,11 @@ def replicate_tags(opts):
     for instance in instances:
         tags = src.do_get('instances/{0}/simplified-tags'.format(instance))
         simplified_tags = simplify_tags(tags)
+
+        logging.debug(simplified_tags)
+
         # TODO: Add instance_id to tags
-        index.do_put(simplified_tags)
+        # index.do_put(simplified_tags)
 
 
 def copy_instances(src, dest, _instances):
@@ -83,23 +86,26 @@ def parse_args(args):
     return parser.parse_args(args)
 
 
+
+
+
 if __name__ == "__main__":
 
     logging.basicConfig(level=logging.DEBUG)
 
-    opts = parse_args(['replicate',
-                       '--src',  'http://orthanc:orthanc@localhost:8042',
-                       '--dest', 'http://orthanc:orthanc@localhost:8043'])
+    # opts = parse_args(['replicate',
+    #                    '--src',  'http://orthanc:orthanc@localhost:8042',
+    #                    '--dest', 'http://orthanc:orthanc@localhost:8043'])
 
     opts = parse_args(['replicate_tags',
                        '--src',  'http://orthanc:orthanc@localhost:8042',
                        '--index', 'http://admin:splunk@localhost:8088'])
-
-    opts = parse_args(['replicate_tags',
-                       '--src',   'http://orthanc:orthanc@localhost:8042',
-                       '--index', 'http://admin:splunk@localhost:8088',
-                       '--query', 'SeriesDescription=\'Dose Record\''
-                       '--dest',  'http://orthanc:orthanc@localhost:8043'])
+    #
+    # opts = parse_args(['replicate_tags',
+    #                    '--src',   'http://orthanc:orthanc@localhost:8042',
+    #                    '--index', 'http://admin:splunk@localhost:8088',
+    #                    '--query', 'SeriesDescription=\'Dose Record\''
+    #                    '--dest',  'http://orthanc:orthanc@localhost:8043'])
 
     logging.debug(opts)
     opts.func(opts)

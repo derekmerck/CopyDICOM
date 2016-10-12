@@ -69,3 +69,11 @@ A simple Splunk query can create a _Count of Studies by Modality by Day_ dashboa
 
 If structured dose reports are included in the archive monitored by `CopyDICOM replicate_tags`, the dose data will also be available for a Splunk dashboard, such as reviewing _Dose by Protocol_.  This is a particularly useful function to the Diagnostic Imaging department at RIH for auditing our quarterly ACR Dose Reports.
 
+
+## Testing
+
+An Ansible playbook is included that sets up Docker containers for an Orthanc source (8042), and Orthanc destination (8043), and a Splunk index (8000/8089) for testing.  Sample data is automatically loaded into the Orthanc source, but the paths are currently hardcoded for my development system, so other users will need to modify them.
+
+````bash
+$ ansible-playbook testbench.yml 
+````
