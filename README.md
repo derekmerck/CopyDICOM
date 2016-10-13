@@ -67,6 +67,10 @@ To use it as a Python library in a script:
 
 A simple Splunk query can create a _Count of Studies by Modality by Day_ dashboard from the tag data.
 
+```
+index=dicom | spath ID | spath SeriesDescription | spath StudyDescription | dedup ID | stats count by SeriesDescription StudyDescription
+```
+
 If structured dose reports are included in the archive monitored by `CopyDICOM replicate_tags`, the dose data will also be available for a Splunk dashboard, such as reviewing _Dose by Protocol_.  This is a particularly useful function to the Diagnostic Imaging department at RIH for auditing our quarterly ACR Dose Reports.
 
 

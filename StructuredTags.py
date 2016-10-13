@@ -19,7 +19,13 @@ class DateTimeEncoder(json.JSONEncoder):
 
 # DICOM Date/Time format
 def get_datetime(str):
-    return datetime.strptime(str, "%Y%m%d%H%M%S")
+    try:
+        # GE Scanner aggregated dt format
+        ts = datetime.strptime(str, "%Y%m%d%H%M%S")
+    except ValueError:
+        # Siemens scanners use a slightly different aggregated format with fractional seconds
+        ts = datetime.strptime(str, "%Y%m%d%H%M%S.%f")
+    return ts
 
 
 def get_tags(item):
@@ -108,10 +114,15 @@ def simplify_tags(tags):
     # Convert DICOM DateTimes into ISO DateTimes
     t = get_datetime(tags['InstanceCreationDate'] + tags['InstanceCreationTime'])
     tags['InstanceCreationDateTime'] = t
-    t = get_datetime(tags['ObservationDateTime'])
-    tags['ObservationDateTime'] = t
     t = get_datetime(tags['StudyDate'] + tags['StudyTime'])
     tags['StudyDateTime'] = t
+
+    # Not all instances have ObservationDateTime
+    try:
+        t = get_datetime(tags['ObservationDateTime'])
+        tags['ObservationDateTime'] = t
+    except KeyError:
+        pass
 
     logging.info(pformat(tags))
 
