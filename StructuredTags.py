@@ -5,11 +5,6 @@ from datetime import datetime
 from pprint import pprint, pformat
 
 
-ORTHANC_HOST = "http://cirr1:4280"
-USER = "orthanc"
-PASS = "cirr!passw0rd"
-
-
 class DateTimeEncoder(json.JSONEncoder):
      def default(self, obj):
          if isinstance(obj, datetime):
@@ -29,6 +24,10 @@ def get_datetime(str):
 
 
 def get_tags(item):
+
+    ORTHANC_HOST = "http://localhost:8042"
+    USER = "orthanc"
+    PASS = "orthanc"
 
     url = ORTHANC_HOST + '/instances/' + item + '/simplified-tags'
     r = requests.get(url, auth=(USER, PASS))
