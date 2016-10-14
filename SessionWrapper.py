@@ -6,6 +6,7 @@ from urlparse import urlsplit
 from datetime import datetime
 import collections
 
+
 class Session(requests.Session):
 
     def __init__(self, address):
@@ -18,7 +19,11 @@ class Session(requests.Session):
         self.hostname = p.hostname
         self.port = p.port
         self.path = p.path
-        self.auth = (p.username, p.password)
+
+        if p.username == "Splunk":
+            self.headers = {'Authorization': 'Splunk {0}'.format(p.password)}
+        else:
+            self.auth = (p.username, p.password)
 
         self.logger = logging.getLogger("{0}:{1} API".format(self.hostname, self.port))
         self.logger.info('Created a session wrapper for %s' % address)
@@ -52,9 +57,6 @@ class Session(requests.Session):
 
     def do_post(self, loc, data, headers={}):
 
-        logging.debug('{0}'.format(headers))
-        logging.debug(type(data))
-
         class DateTimeEncoder(json.JSONEncoder):
             def default(self, obj):
                 if isinstance(obj, datetime):
@@ -65,10 +67,6 @@ class Session(requests.Session):
             headers.update({'content-type': 'application/json'})
             data = json.dumps(data, cls=DateTimeEncoder)
 
-        logging.debug(data)
-
         r = self.post(self.get_url(loc), data=data, headers=headers, verify=False)
-
-        logging.debug(r.request.headers)
 
         return self.do_return(r)

@@ -8,6 +8,22 @@ from datetime import datetime
 import time
 from bs4 import BeautifulSoup
 
+
+def indexed_instances(index, q=None):
+
+    if not q:
+        q = "search index=dicom | spath ID | dedup ID | table ID"
+
+    r = index.do_post('services/search/jobs', data="search={0}".format(q))
+    soup = BeautifulSoup(r, 'xml')
+    sid = soup.find('sid').string
+    # TODO: Need to poll here instead of just waiting
+    time.sleep(2)
+    r = index.do_get('services/search/jobs/{0}/results'.format(sid), params={'output_mode': 'csv', 'count': 0})
+    indexed_instances = r.replace('"', '').splitlines()[1:]
+    return indexed_instances
+
+
 def replicate_tags(opts):
     logging.info('Replicating tags to index.')
 
@@ -22,24 +38,14 @@ def replicate_tags(opts):
 
     index = Session(opts.index)
 
-    index.scheme = "https"
-    index.port = 8089
-    index.auth = ('admin', 'splunk')
-    r = index.do_post('services/search/jobs', data="search=search index=dicom | spath ID | dedup ID | table ID")
-    soup = BeautifulSoup(r, 'xml')
-    sid = soup.find('sid').string
-    time.sleep(5)
-    r = index.do_get('services/search/jobs/{0}/results'.format(sid), params={'output_mode': 'csv', 'count': 0})
-    indexed_instances = r.replace('"', '').splitlines()[1:]
-    logging.info("Found {0} instances already indexed.".format(len(indexed_instances)))
-    instances = set(_instances) - set(indexed_instances)
+    _indexed_instances = indexed_instances(index)
+    logging.info("Found {0} instances already indexed.".format(len(_indexed_instances)))
+
+    instances = set(_instances) - set(_indexed_instances)
     logging.info("Found {0} new instances to index.".format(len(instances)))
 
     # HEC uses strange token authorization
-    headers = {'Authorization': 'Splunk A02CFC83-3AD4-4FA4-AD8B-26EA3F229B48'}
-    index.scheme = "http"
-    index.port = 8088
-    index.auth = None
+    hec = Session(opts.hec)
 
     for instance in instances:
         tags = src.do_get('instances/{0}/simplified-tags'.format(instance))
@@ -52,7 +58,7 @@ def replicate_tags(opts):
                                         ('index', 'dicom'),
                                         ('event', simplified_tags )])
         # logging.debug(pformat(data))
-        index.do_post('services/collector/event', data=data, headers=headers)
+        hec.do_post('services/collector/event', data=data)
 
 
 def copy_instances(src, dest, _instances):
@@ -69,15 +75,10 @@ def copy_instances(src, dest, _instances):
 
 def conditional_replicate(opts):
 
-    def FilterInstances():
-        index = Session(opts.index)
-        instances = index.do_put(opts.query)
-        # TODO: Figure out what these queries will look like
-        return instances
-
     src = Session(opts.src)
     dest = Session(opts.dest)
-    instances = FilterInstances()
+    index = Session(opts.index)
+    instances = indexed_instances(index, q=opts.query)
     # TODO: Confirm those instances exist on src
     copy_instances(src, dest, instances)
 
@@ -104,15 +105,16 @@ def parse_args(args):
     parser_b = subparsers.add_parser('replicate_tags',
                                      help='Copy non-redundant tags from one Orthanc instance to a Splunk index.')
     parser_b.add_argument('--src')
-    parser_b.add_argument('--index')
+    parser_b.add_argument('--index', help="Splunk API address")
+    parser_b.add_argument('--hec',   help="Splunk HEC address")
     parser_b.set_defaults(func=replicate_tags)
 
     parser_c = subparsers.add_parser('conditional_replicate',
                                      help='Copy non-redundant images one Orthanc to another using an index filter')
     parser_c.add_argument('--src')
-    parser_c.add_argument('--dest')
     parser_c.add_argument('--index')
     parser_c.add_argument('--query')
+    parser_c.add_argument('--dest')
     parser_c.set_defaults(func=conditional_replicate)
 
     return parser.parse_args(args)
@@ -129,15 +131,16 @@ if __name__ == "__main__":
     #                    '--src',  'http://orthanc:orthanc@localhost:8042',
     #                    '--dest', 'http://orthanc:orthanc@localhost:8043'])
 
-    opts = parse_args(['replicate_tags',
-                       '--src',  'http://orthanc:orthanc@localhost:8042',
-                       '--index', 'http://Splunk:C7012473-4101-49E2-88EF-83AA2A78FCC2@localhost:8088'])
-    #
     # opts = parse_args(['replicate_tags',
     #                    '--src',   'http://orthanc:orthanc@localhost:8042',
-    #                    '--index', 'http://admin:splunk@localhost:8088',
-    #                    '--query', 'SeriesDescription=\'Dose Record\''
-    #                    '--dest',  'http://orthanc:orthanc@localhost:8043'])
+    #                    '--index', 'https://admin:splunk@localhost:8089',
+    #                    '--hec',   'http://Splunk:A02CFC83-3AD4-4FA4-AD8B-26EA3F229B48@localhost:8088'])
+    #
+    opts = parse_args(['conditional_replicate',
+                       '--src',   'http://orthanc:orthanc@localhost:8042',
+                       '--index', 'https://admin:splunk@localhost:8089',
+                       '--query', 'search index=dicom | spath SeriesDescription | search SeriesDescription="Dose Record" | spath ID | table ID',
+                       '--dest',  'http://orthanc:orthanc@localhost:8043'])
 
     logging.debug(opts)
     opts.func(opts)
