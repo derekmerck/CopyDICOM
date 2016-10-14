@@ -30,27 +30,32 @@ To use it as a stand-alone script:
 ````bash
 $ docker run docker run -d -p 8042:8042 jodogne/orthanc
 $ docker run docker run -d -p 8043:8042 jodogne/orthanc
-$ python CopyDICOM.py replicate --src 'http://orthanc:orthanc@localhost:8042' \
+$ python CopyDICOM.py replicate 
+>  --src  'http://orthanc:orthanc@localhost:8042' \
 >  --dest 'http://orthanc:orthanc@localhost:8043'
 ````
 
 ````bash
 $ docker run docker run -d -p 8088:8088 outcoldman/splunk
-$ python CopyDICOM.py replicate_tags --src 'http://orthanc:orthanc@localhost:8042' \
->  --index 'http://admin:changeme@localhost:8088'
+$ python CopyDICOM.py replicate_tags 
+>  --src   'http://orthanc:orthanc@localhost:8042' \
+>  --index 'https://admin:changeme@localhost:8089' \
+>  --hec   'http://Splunk:<token>@localhost:8088
 ````
 
 ````bash
-$ python CopyDICOM.py conditional_replicate --src 'http://orthanc:orthanc@localhost:8042' \
->  --index 'http://admin:changeme@localhost:8088' --query 'SeriesDescription=\'Dose Record\'' \ 
->  --dest 'http://orthanc:orthanc@localhost:8043'
+$ python CopyDICOM.py conditional_replicate 
+>  --src   'http://orthanc:orthanc@localhost:8042' \
+>  --index 'https://admin:changeme@localhost:8089' \
+>  --query 'search index=dicom | spath SeriesDescription | search SeriesDescription="Dose Record" | spath ID | table ID' \ 
+>  --dest  'http://orthanc:orthanc@localhost:8043'
 ````
 
 To use it as a Python library in a script:
 
 ````python
 >>> import CopyDICOM
->>> CopyDICOM.replicate('http://orthanc:orthanc@localhost:8042', 'http://orthanc:orthanc@localhost:8043')
+>>> CopyDICOM.replicate(src='http://orthanc:orthanc@localhost:8042', dest='http://orthanc:orthanc@localhost:8043')
 ````
 
 
@@ -58,7 +63,7 @@ To use it as a Python library in a script:
 
 * `replicate`: copy all non-duplicate DICOM images from a source Orthanc instance to a destination Orthanc instance
 * `replicate_tags`: copy all non-duplicate DICOM tags from a source Orthanc instance to a Splunk index
-* `conditional_replicate`: Query a Splunk index for a set of candidate instances, and copy non-duplicate DICOM images in this set from a source Orthanc instance to a destination Orthanc instance.
+* `conditional_replicate`: Query a Splunk index for a set of candidate instances, and copy non-duplicate DICOM images in that set from a source Orthanc instance to a destination Orthanc instance.
 
 `conditional_replicate` is intended to allow automatic duplication of specific image types from a primary archive into secondary, project specific DICOM stores, typically with a de-identifier on ingestion.  In DIANA, such secondary image repositories are called "Anonymized Image Archives" or "AIRs".
 
