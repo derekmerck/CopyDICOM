@@ -7,9 +7,9 @@
 
 ## Overview
 
-`CopyDICOM` is a python script that monitors an installation of Jodogne's [Orthanc][] and copies DICOM imaging to another instance of Orthanc or DICOM tags to a [Splunk][] index.  It can also reduce DICOM structured report tags into a format following Orthanc's 'simplified-tags' presentation.  This can be useful for parsing data from dose reports into a data index.
+`CopyDICOM` is a python script that monitors an installation of Jodogne's [Orthanc][] and copies DICOM imaging to another instance of Orthanc or DICOM tags to a [Splunk][] index.  It can also reduce DICOM structured report tags into a format following Orthanc's 'simplified-tags' presentation.  This can be useful for parsing data from dose reports in a tag index.
 
-`CopyDICOM` is intended to be used as an adjunct with an automatic DICOM data analytics framework, specifically [DIANA][], but it works well as a stand alone tool, with somewhat more intelligent copying than Orthanc's standard `Replicate.py` script.
+`CopyDICOM` is intended to be used as an adjunct with an automatic DICOM data analytics framework, specifically [DIANA][], but it works well as a stand alone tool, with somewhat more intelligent copying than Orthanc's standard `Replicate.py` script.  In particular, it does not attempt to replicate data that is already extant at the destination, and working with a tag index, it can selectively copy subsets of image data based on complex queries.
  
  [Orthanc]: https://orthanc.chu.ulg.ac.be
  [DICOM]: http://dicom.nema.org
@@ -88,3 +88,7 @@ An [Ansible][] playbook is included that sets up local Docker containers for an 
 ````bash
 $ ansible-playbook testbench.yml 
 ````
+
+## Dose Data
+
+For any accession, any series = 997 is ONLY dose data series = 997
