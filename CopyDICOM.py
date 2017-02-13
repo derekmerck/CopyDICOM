@@ -9,7 +9,7 @@ import time
 import pprint
 
 
-def indexed_instances(index, q=None):
+def indexed_instances(index, index_name, q=None):
 
     def poll_until_done(sid):
         isDone = False
@@ -25,9 +25,10 @@ def indexed_instances(index, q=None):
         return r['entry'][0]['content']['resultCount']
 
     if not q:
-        q = "search index=dicom | spath ID | dedup ID | table ID"
+        q = "search index={0} | spath ID | dedup ID | table ID".format(index_name)
 
     r = index.do_post('services/search/jobs', data="search={0}".format(q))
+
     soup = BeautifulSoup(r, 'xml')
     sid = soup.find('sid').string
 
@@ -45,7 +46,7 @@ def indexed_instances(index, q=None):
     return instances
 
 
-def replicate_dose_tags(opts):
+def index_dose_tags(opts):
     logging.info('Replicating dose report tags to index.')
 
     # Time has to be absent, or passed in as epoch to be a valid request
@@ -58,7 +59,7 @@ def replicate_dose_tags(opts):
 
     # Get only RECENT series
     all_series = src.do_post('tools/find', data={'Level': 'Series',
-                                                 'Query': {'StudyDate': '20170112-'}})
+                                                 'Query': {'StudyDate': opts.study_dates}})
     logging.info("Found {0} candidate series.".format(len(all_series)))
     _instances = []
 
@@ -73,7 +74,7 @@ def replicate_dose_tags(opts):
 
     index = Session(opts.index)
 
-    _indexed_instances = indexed_instances(index)
+    _indexed_instances = indexed_instances(index, opts.index_name)
     logging.info("Found {0} instances already indexed.".format(len(_indexed_instances)))
 
     instances = set(_instances) - set(_indexed_instances)
@@ -97,7 +98,7 @@ def replicate_dose_tags(opts):
 
 
 
-def replicate_tags(opts):
+def index_tags(opts):
     logging.info('Replicating tags to index.')
 
     # Time has to be absent, or passed in as epoch to be a valid request
@@ -106,29 +107,37 @@ def replicate_tags(opts):
         return time.mktime(tt)
 
     src = Session(opts.src)
-    _instances = src.do_get('instances')
-    logging.info("Found {0} candidate instances.".format(len(_instances)))
+    _instances = src.do_get(opts.qlevel)
+    logging.info("Found {0} candidate {1}.".format(len(_instances), opts.qlevel))
 
     index = Session(opts.index)
 
-    _indexed_instances = indexed_instances(index)
-    logging.info("Found {0} instances already indexed.".format(len(_indexed_instances)))
+    _indexed_instances = indexed_instances(index, opts.index_name)
+    logging.info("Found {0} {1} already indexed.".format(len(_indexed_instances), opts.qlevel))
 
     instances = set(_instances) - set(_indexed_instances)
-    logging.info("Found {0} new instances to index.".format(len(instances)))
+    logging.info("Found {0} new {1} to index.".format(len(instances), opts.qlevel))
 
     # HEC uses strange token authorization
     hec = Session(opts.hec)
 
     for instance in instances:
-        tags = src.do_get('instances/{0}/simplified-tags'.format(instance))
+        if opts.qlevel != "instances":
+            tags = src.do_get('{0}/{1}/shared-tags?simplify'.format(opts.qlevel, instance))
+        else:
+            tags = src.do_get('{0}/{1}/tags?simplify'.format(opts.qlevel, instance))
+
         simplified_tags = simplify_tags(tags)
+
         # Add Orthanc ID for future reference
         simplified_tags['ID'] = instance
+
+        logging.debug(pprint.pformat(simplified_tags))
+
         data = collections.OrderedDict([('time', epoch(simplified_tags['InstanceCreationDateTime'])),
                                         ('host', '{0}:{1}'.format(src.hostname, src.port)),
                                         ('sourcetype', '_json'),
-                                        ('index', 'dicom'),
+                                        ('index', opts.index_name),
                                         ('event', simplified_tags )])
         # logging.debug(pformat(data))
         hec.do_post('services/collector/event', data=data)
@@ -171,6 +180,27 @@ def copy_instances(src, dest, _instances):
         dest.do_post('instances', data=dicom, headers=headers)
 
 
+def remote_conditional_replicate(opts):
+    src = Session(opts.src)
+
+    r = src.do_get('statistics')
+    logging.debug(pprint.pformat(r))
+
+    r = src.do_get('series')
+    logging.debug(pprint.pformat(r))
+
+    r = src.do_get('modalities/{0}'.format(opts.remote))
+    logging.debug(pprint.pformat(r))
+
+    r = src.do_post("modalities/{0}/find".format(opts.remote),
+                    data={'PatientName': 'LATIF*'})
+    logging.debug(pprint.pformat(r))
+    return
+
+    # instances = src.do_get('instances')
+    # copy_instances(src, dest, instances)
+
+
 def conditional_replicate(opts):
 
     src = Session(opts.src)
@@ -200,27 +230,38 @@ def parse_args(args):
     parser_a.add_argument('--dest')
     parser_a.set_defaults(func=replicate)
 
-    parser_b = subparsers.add_parser('replicate_tags',
+    parser_b = subparsers.add_parser('index_tags',
                                      help='Copy non-redundant tags from one Orthanc instance to a Splunk index.')
     parser_b.add_argument('--src')
+    parser_b.add_argument('--qlevel', help="Query level", choices=['patients', 'studies', 'series', 'instances'])
     parser_b.add_argument('--index', help="Splunk API address")
+    parser_b.add_argument('--index_name', help="Splunk index name")
     parser_b.add_argument('--hec',   help="Splunk HEC address")
-    parser_b.set_defaults(func=replicate_tags)
+    parser_b.set_defaults(func=index_tags)
 
-    parser_b = subparsers.add_parser('replicate_dose_tags',
+    parser_c = subparsers.add_parser('index_dose_tags',
                                      help='Copy non-redundant dose report tags from one Orthanc instance to a Splunk index.')
-    parser_b.add_argument('--src')
-    parser_b.add_argument('--index', help="Splunk API address")
-    parser_b.add_argument('--hec',   help="Splunk HEC address")
-    parser_b.set_defaults(func=replicate_dose_tags)
-
-    parser_c = subparsers.add_parser('conditional_replicate',
-                                     help='Copy non-redundant images one Orthanc to another using an index filter')
     parser_c.add_argument('--src')
-    parser_c.add_argument('--index')
-    parser_c.add_argument('--query')
-    parser_c.add_argument('--dest')
-    parser_c.set_defaults(func=conditional_replicate)
+    parser_c.add_argument('--study_dates')
+    parser_c.add_argument('--index', help="Splunk API address")
+    parser_c.add_argument('--index_name', help="Splunk index name")
+    parser_c.add_argument('--hec',   help="Splunk HEC address")
+    parser_c.set_defaults(func=index_dose_tags)
+
+    parser_d = subparsers.add_parser('conditional_replicate',
+                                     help='Copy non-redundant images one Orthanc to another using an index filter')
+    parser_d.add_argument('--src')
+    parser_d.add_argument('--index')
+    parser_d.add_argument('--query')
+    parser_d.add_argument('--dest')
+    parser_d.set_defaults(func=conditional_replicate)
+
+    parser_e = subparsers.add_parser('remote_conditional_replicate',
+                                     help='Copy non-redundant images from a remote modality to Orthanc')
+    parser_e.add_argument('--src')
+    parser_e.add_argument('--remote', help='Remote modality name in the Orthanc proxy')
+    parser_e.add_argument('--query')
+    parser_e.set_defaults(func=remote_conditional_replicate)
 
     return parser.parse_args(args)
 
@@ -229,10 +270,11 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.DEBUG)
 
-    # Test mirroring
-    opts = parse_args(['replicate',
-                       '--src',  'http://orthanc:orthanc@localhost:8042',
-                       '--dest', 'http://orthanc:orthanc@localhost:8043'])
+
 
     logging.debug(opts)
     opts.func(opts)
+
+
+# TODO: Setup Splunk to monitor /var/logs/orthanc/* on cirr1, cirr2
+# TODO: Setup CopyDICOM to run every hour and look at last 2 days of studies?

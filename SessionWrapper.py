@@ -6,6 +6,8 @@ from urlparse import urlsplit
 from datetime import datetime
 import collections
 
+# from requests.packages.urllib3.util import Retry
+from requests.adapters import HTTPAdapter
 
 class Session(requests.Session):
 
@@ -27,6 +29,8 @@ class Session(requests.Session):
 
         self.logger = logging.getLogger("{0}:{1} API".format(self.hostname, self.port))
         self.logger.info('Created a session wrapper for %s' % address)
+
+        self.mount('http://', HTTPAdapter(max_retries=5))
 
     def get_url(self, *loc):
         return urljoin("{0}://{1}:{2}".format(self.scheme, self.hostname, self.port), self.path, *loc)

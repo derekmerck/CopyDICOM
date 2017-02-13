@@ -89,6 +89,8 @@ An [Ansible][] playbook is included that sets up local Docker containers for an 
 $ ansible-playbook testbench.yml 
 ````
 
+Then login to `http://admin:changeme@localhost:8000` and add indices and get a HEC token.  It seems to work best to turn off the global SSL on the HEC inputs, as well.
+
 ## Dose Data
 
 For any accession, any series = 997 is ONLY dose data series = 997
