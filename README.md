@@ -78,6 +78,7 @@ index=dicom | spath ID | spath SeriesDescription | spath StudyDescription | dedu
 
 If structured dose reports are included in the archive monitored by `CopyDICOM replicate_tags`, the dose data will also be available for a Splunk dashboard, such as reviewing _Dose by Protocol_.  This is a particularly useful function to the Diagnostic Imaging department at RIH for auditing our quarterly ACR Dose Reports.
 
+For very long, complex dose reports, may need to alter `_json` source type with a new variable: `TRUNCATE=999999` to beat the 10k char limit on a single line.
 
 ## Testing
 

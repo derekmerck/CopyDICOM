@@ -54,7 +54,7 @@ class OrthancGateway(Gateway):
             # Add item ID for later reference
             r['ID'] = item
 
-            logging.debug(pprint.pformat(r))
+            # logging.debug(pprint.pformat(r))
 
         elif dtype=="info":
             r = self.session.do_get('{0}/{1}'.format(self.level, item))
@@ -182,15 +182,16 @@ def UpdateDoseReports( orthanc, splunk ):
     q = "search index=dicom_series SeriesNumber = 997 OR SeriesNumber = 502 | table ID"
     candidates = splunk.ListItems(q)
 
-    logging.debug('Candidate dose reports:')
-    logging.debug(pprint.pformat(candidates))
-
     # Which ones are already available in Splunk/dose_records (looking at ParentSeriesID)
     splunk.index = splunk.index_names['dose']
     q = "search index=dose_reports | table ParentSeriesID"
     indexed = splunk.ListItems(q)
 
     items = SetDiff(candidates, indexed)
+
+    # logging.debug(pprint.pformat(candidates))
+    # logging.debug(pprint.pformat(indexed))
+    # logging.debug(pprint.pformat(items))
 
     # Get instance from Orthanc
     for item in items:
@@ -203,7 +204,13 @@ def UpdateDoseReports( orthanc, splunk ):
         # Add IDs
         tags['ParentSeriesID'] = item
 
+        logging.debug(pprint.pformat(tags))
+
         splunk.AddItem(tags, src=orthanc)
+
+    logging.debug('Candidate dose reports: {0}'.format(len(candidates)))
+    logging.debug('Indexed dose reports: {0}'.format(len(indexed)))
+    logging.debug('New dose reports: {0}'.format(len(items)))
 
 
 if __name__ == "__main__":
