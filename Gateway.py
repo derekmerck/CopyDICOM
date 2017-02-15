@@ -33,7 +33,7 @@ class OrthancGateway(Gateway):
         # Active level
         self.level = kwargs.get('level')
 
-    def ListItems(self, condition=None):
+    def ListItems(self, condition=None, *args, **kwargs):
 
         if condition:
             raise NotImplementedError
@@ -46,7 +46,7 @@ class OrthancGateway(Gateway):
 
         r = None
         if dtype=="tags":
-            if self.level == 'instance':
+            if self.level == 'instances':
                 r = self.session.do_get('{0}/{1}/tags?simplify'.format(self.level, item))
             else:
                 r = self.session.do_get('{0}/{1}/shared-tags?simplify'.format(self.level, item))
@@ -63,7 +63,7 @@ class OrthancGateway(Gateway):
             r = self.session.do_get('{0}/{1}/file'.format(self.level, item))
         return r
 
-    def AddItem(self, item):
+    def AddItem(self, item, *args, **kwargs):
         if self.level != "instances":
             raise NotImplementedError
         headers = {'content-type': 'application/dicom'}
@@ -84,10 +84,7 @@ class SplunkGateway(Gateway):
                                       {'series': 'dicom_series',
                                        'dose': 'dose_reports'})
 
-    def ListItems(self, condition=None):
-
-        if condition:
-            raise NotImplementedError
+    def ListItems(self, condition=None, *args, **kwargs):
 
         def poll_until_done(sid):
             isDone = False
@@ -104,22 +101,23 @@ class SplunkGateway(Gateway):
             return r['entry'][0]['content']['resultCount']
 
         if not condition:
-            q = "search index={0} | spath ID | dedup ID | table ID".format(self.index)
-            r = self.session.do_post('services/search/jobs', data="search={0}".format(q))
-            soup = BeautifulSoup(r, 'xml')
-            sid = soup.find('sid').string
-            n = poll_until_done(sid)
-            offset = 0
-            instances = []
-            i = 0
-            while offset < n:
-                count = 50000
-                offset = 0 + count * i
-                r = self.session.do_get('services/search/jobs/{0}/results'.format(sid),
-                                 params={'output_mode': 'csv', 'count': count, 'offset': offset})
-                instances = instances + r.replace('"', '').splitlines()[1:]
-                i = i + 1
-            return instances
+            condition = "search index={0} | spath ID | dedup ID | table ID".format(self.index)
+
+        r = self.session.do_post('services/search/jobs', data="search={0}".format(condition))
+        soup = BeautifulSoup(r, 'xml')
+        sid = soup.find('sid').string
+        n = poll_until_done(sid)
+        offset = 0
+        instances = []
+        i = 0
+        while offset < n:
+            count = 50000
+            offset = 0 + count * i
+            r = self.session.do_get('services/search/jobs/{0}/results'.format(sid),
+                             params={'output_mode': 'csv', 'count': count, 'offset': offset})
+            instances = instances + r.replace('"', '').splitlines()[1:]
+            i = i + 1
+        return instances
 
     def AddItem(self, item, *args, **kwargs):
 
@@ -178,23 +176,35 @@ def UpdateSeriesIndex( orthanc, splunk ):
 
 
 def UpdateDoseReports( orthanc, splunk ):
-    orthanc.level = 'series'
+
+    # List of candidate series out of Splunk/dicom_series
     splunk.index = splunk.index_names['series']
-
-    items = orthanc.ListItems()
-    dose_items = []
-
-    for item in items:
-        tags = orthanc.GetItem(item, 'info')
-        if tags['MainDicomTags']['SeriesNumber'] == '997' or tags['MainDicomTags']['SeriesNumber'] == '502':
-            dose_items.append(tags['Instances'][0])
+    q = "search index=dicom_series SeriesNumber = 997 OR SeriesNumber = 502 | table ID"
+    candidates = splunk.ListItems(q)
 
     logging.debug('Candidate dose reports:')
-    logging.debug(pprint.pformat(dose_items))
+    logging.debug(pprint.pformat(candidates))
 
-    orthanc.level = "instances"
+    # Which ones are already available in Splunk/dose_records (looking at ParentSeriesID)
     splunk.index = splunk.index_names['dose']
-    CopyNewItems(orthanc, splunk, dose_items)
+    q = "search index=dose_reports | table ParentSeriesID"
+    indexed = splunk.ListItems(q)
+
+    items = SetDiff(candidates, indexed)
+
+    # Get instance from Orthanc
+    for item in items:
+        orthanc.level = 'series'
+        info = orthanc.GetItem(item, 'info')
+        instance = info['Instances'][0]
+
+        orthanc.level = 'instances'
+        tags = orthanc.GetItem(instance, 'tags')
+        # Add IDs
+        tags['ParentSeriesID'] = item
+
+        splunk.AddItem(tags, src=orthanc)
+
 
 if __name__ == "__main__":
 
@@ -213,6 +223,6 @@ if __name__ == "__main__":
     # Update the series index
     UpdateSeriesIndex(orthanc0, splunk)
 
-    # Update the dose reports
-    # UpdateDoseReports(orthanc0, splunk)
+    # Update the dose reports based on the splunk index
+    UpdateDoseReports(orthanc0, splunk)
 
