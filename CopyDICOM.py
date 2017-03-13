@@ -180,21 +180,20 @@ def copy_instances(src, dest, _instances):
         dest.do_post('instances', data=dicom, headers=headers)
 
 
-def remote_conditional_replicate(opts):
-    src = Session(opts.src)
+def index_remote_tags(src, remote, index):
 
-    r = src.do_get('statistics')
+    r = src.do_get('modalities/{0}'.format(remote))
     logging.debug(pprint.pformat(r))
 
-    r = src.do_get('series')
+    r = src.do_post("modalities/{0}/query".format(remote),
+                    data={'Level': 'Study',
+                          'Query': {'StudyDate': '20170308'}
+                          })
     logging.debug(pprint.pformat(r))
 
-    r = src.do_get('modalities/{0}'.format(opts.remote))
+    r = src.do_get('/{0}'.format(r['Path']))
     logging.debug(pprint.pformat(r))
 
-    r = src.do_post("modalities/{0}/find".format(opts.remote),
-                    data={'PatientName': 'LATIF*'})
-    logging.debug(pprint.pformat(r))
     return
 
     # instances = src.do_get('instances')
@@ -256,12 +255,14 @@ def parse_args(args):
     parser_d.add_argument('--dest')
     parser_d.set_defaults(func=conditional_replicate)
 
-    parser_e = subparsers.add_parser('remote_conditional_replicate',
-                                     help='Copy non-redundant images from a remote modality to Orthanc')
-    parser_e.add_argument('--src')
-    parser_e.add_argument('--remote', help='Remote modality name in the Orthanc proxy')
-    parser_e.add_argument('--query')
-    parser_e.set_defaults(func=remote_conditional_replicate)
+    parser_e = subparsers.add_parser('index_remote_tags',
+                                     help='Copy non-redundant tags from an Orthanc proxied remote modality to an index')
+    parser_e.add_argument('--src',   help='Orthanc proxy')
+    parser_e.add_argument('--remote',help='Remote modality name in the Orthanc proxy')
+    parser_e.add_argument('--index', help="Splunk API address")
+    parser_e.add_argument('--index_name', help="Splunk index name")
+    parser_e.add_argument('--hec',   help="Splunk HEC address")
+    parser_e.set_defaults(func=index_remote_tags)
 
     return parser.parse_args(args)
 
@@ -269,12 +270,6 @@ def parse_args(args):
 if __name__ == "__main__":
 
     logging.basicConfig(level=logging.DEBUG)
-
-
-
+    opts = parse_args()
     logging.debug(opts)
     opts.func(opts)
-
-
-# TODO: Setup Splunk to monitor /var/logs/orthanc/* on cirr1, cirr2
-# TODO: Setup CopyDICOM to run every hour and look at last 2 days of studies?

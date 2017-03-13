@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from hashlib import md5
 import time
 import pprint
+import uuid
 
 class Gateway(object):
 
@@ -15,6 +16,7 @@ class Gateway(object):
         # Create session wrapper
         address = kwargs.get('address')
         self.session = Session(address)
+        self.base_uuid = uuid.uuid3(uuid.NAMESPACE_DNS, 'cirr.lifespan.org')
 
     def ListItems(self, condition=None, *args, **kwargs):
         raise NotImplementedError
@@ -32,6 +34,14 @@ class OrthancGateway(Gateway):
         super(OrthancGateway, self).__init__(**kwargs)
         # Active level
         self.level = kwargs.get('level')
+
+    def QueryRemote(self, remote, query=None, *args, **kwargs):
+
+        data = {'Level': self.level,
+                'Query': query}
+
+        r = self.session.do_post('modalities/{0}/query'.format(remote), data=data)
+        return r
 
     def ListItems(self, condition=None, *args, **kwargs):
 
@@ -82,7 +92,8 @@ class SplunkGateway(Gateway):
         # Mapping between functions and index names
         self.index_names = kwargs.get('index_names',
                                       {'series': 'dicom_series',
-                                       'dose': 'dose_reports'})
+                                       'dose': 'dose_reports',
+                                       'remote_studies': 'pacs_studies'})
 
     def ListItems(self, condition=None, *args, **kwargs):
 
@@ -125,9 +136,11 @@ class SplunkGateway(Gateway):
             tt = dt.timetuple()
             return time.mktime(tt)
 
-        src = kwargs.get('src', 'unknown')
+        src = kwargs.get('src')
+        host = kwargs.get('host', '{0}:{1}'.format(src.session.hostname, src.session.port))
+
         data = collections.OrderedDict([('time', epoch(item['InstanceCreationDateTime'])),
-                                        ('host', '{0}:{1}'.format(src.session.hostname, src.session.port)),
+                                        ('host', host),
                                         ('sourcetype', '_json'),
                                         ('index', self.index),
                                         ('event', item)])
@@ -173,6 +186,49 @@ def UpdateSeriesIndex( orthanc, splunk ):
     logging.debug(pprint.pformat(items))
 
     CopyNewItems( orthanc, splunk, items, 'tags' )
+
+def UpdateRemoteStudyIndex( orthanc, remote, splunk, **kwargs ):
+    orthanc.level = 'study'
+    splunk.index = splunk.index_names['remote_studies']
+
+    existing_items = splunk.ListItems()
+    logging.debug(existing_items)
+
+    study_date = kwargs.get('StudyDate')
+
+    # Have to request all fields that you want returned (and some are not returned regardless)
+    q = orthanc.QueryRemote(remote, query={'StudyDate': study_date,
+                                           'AccessionNumber':'',
+                                           'InstitutionName':'',
+                                           'ModalitiesInStudy':'CT',
+                                           'PatientBirthDate':'',
+                                           'PatientID':'',
+                                           'PatientName':'',
+                                           'PatientSex':'',
+                                           'StudyTime':'',
+                                           'StationName':'',
+                                           'StudyDescription':''})
+    logging.debug(pprint.pformat(q))
+
+    answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
+
+    host = '{0}:{1}/modalities/{2}'.format(orthanc.session.hostname, orthanc.session.port, remote)
+
+    for a in answers:
+        r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'],a))
+        r = simplify_tags(r)
+
+        r['ID'] = uuid.uuid5(splunk.base_uuid, str(r['StudyInstanceUID']))
+
+        logging.debug('Type of ID: {0}'.format(type(r['ID'])))
+
+        logging.debug(pprint.pformat(r))
+
+        if not str(r['ID']) in existing_items:
+            logging.debug('Adding item {0}'.format(r['ID']))
+            splunk.AddItem(r, src=orthanc, host=host)
+        else:
+            logging.debug('Skipping item {0}'.format(r['ID']))
 
 
 def UpdateDoseReports( orthanc, splunk ):

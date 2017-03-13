@@ -30,21 +30,21 @@ To use it as a stand-alone script:
 ````bash
 $ docker run docker run -d -p 8042:8042 jodogne/orthanc
 $ docker run docker run -d -p 8043:8042 jodogne/orthanc
-$ python CopyDICOM.py replicate 
+$ python CopyDICOM.py replicate \
 >  --src  'http://orthanc:orthanc@localhost:8042' \
 >  --dest 'http://orthanc:orthanc@localhost:8043'
 ````
 
 ````bash
-$ docker run docker run -d -p 8088:8088 outcoldman/splunk
-$ python CopyDICOM.py replicate_tags 
+$ docker run docker run -d -p 8088:8088 -p 8089:8089 splunk
+$ python CopyDICOM.py replicate_tags \
 >  --src   'http://orthanc:orthanc@localhost:8042' \
 >  --index 'https://admin:changeme@localhost:8089' \
 >  --hec   'http://Splunk:<token>@localhost:8088
 ````
 
 ````bash
-$ python CopyDICOM.py conditional_replicate 
+$ python CopyDICOM.py conditional_replicate \
 >  --src   'http://orthanc:orthanc@localhost:8042' \
 >  --index 'https://admin:changeme@localhost:8089' \
 >  --query 'search index=dicom | spath SeriesDescription | search SeriesDescription="Dose Record" | spath ID | table ID' \ 
@@ -53,7 +53,7 @@ $ python CopyDICOM.py conditional_replicate
 
 To use it as a Python library in a script:
 
-````python
+```python
 >>> import CopyDICOM
 >>> CopyDICOM.replicate(src='http://orthanc:orthanc@localhost:8042', dest='http://orthanc:orthanc@localhost:8043')
 ````
@@ -94,4 +94,4 @@ Then login to `http://admin:changeme@localhost:8000` and add indices and get a H
 
 ## Dose Data
 
-For any accession, any series = 997 is ONLY dose data series = 997
+For any GE accession, series 997 is the dose S/R series.  For Siemens, 504 is the dose S/R series.
