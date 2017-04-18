@@ -2,12 +2,10 @@ from SessionWrapper import Session
 from StructuredTags import simplify_tags
 import collections
 import logging
-import argparse
 from bs4 import BeautifulSoup
-from hashlib import md5
 import time
 import pprint
-import uuid
+import hashlib
 
 class Gateway(object):
 
@@ -16,7 +14,7 @@ class Gateway(object):
         # Create session wrapper
         address = kwargs.get('address')
         self.session = Session(address)
-        self.base_uuid = uuid.uuid3(uuid.NAMESPACE_DNS, 'cirr.lifespan.org')
+        # self.base_uuid = uuid.uuid3(uuid.NAMESPACE_DNS, 'cirr.lifespan.org')
 
     def ListItems(self, condition=None, *args, **kwargs):
         raise NotImplementedError
@@ -41,6 +39,16 @@ class OrthancGateway(Gateway):
                 'Query': query}
 
         r = self.session.do_post('modalities/{0}/query'.format(remote), data=data)
+        return r
+
+    def RetrieveFromRemote(self, remote, resources=None):
+        data = {'Level': self.level,
+                'Resources': resources}
+
+        logging.debug(pprint.pformat(data))
+
+        r = self.session.do_post('modalities/{0}/move'.format(remote), data=data)
+
         return r
 
     def ListItems(self, condition=None, *args, **kwargs):
@@ -93,7 +101,8 @@ class SplunkGateway(Gateway):
         self.index_names = kwargs.get('index_names',
                                       {'series': 'dicom_series',
                                        'dose': 'dose_reports',
-                                       'remote_studies': 'pacs_studies'})
+                                       'remote_studies': 'pacs_studies',
+                                       'remote_series': 'pacs_series'})
 
     def ListItems(self, condition=None, *args, **kwargs):
 
@@ -187,48 +196,165 @@ def UpdateSeriesIndex( orthanc, splunk ):
 
     CopyNewItems( orthanc, splunk, items, 'tags' )
 
+
+
+# Doing this hour-by-hour results in a complete list of studies for the day
+# DOES include outside studies
+# DOES include incomplete or cancelled studies
+# DOES NOT include OFFLINE studies
+# This _should_ be more than whatever is in the dose index, as it will include outside studies.
+
 def UpdateRemoteStudyIndex( orthanc, remote, splunk, **kwargs ):
     orthanc.level = 'study'
     splunk.index = splunk.index_names['remote_studies']
 
     existing_items = splunk.ListItems()
-    logging.debug(existing_items)
+    # logging.debug(existing_items)
 
-    study_date = kwargs.get('StudyDate')
+    study_date = kwargs.get('study_date')
+    study_time = kwargs.get('study_time')
+    modality = kwargs.get('modality', 'CT')
 
-    # Have to request all fields that you want returned (and some are not returned regardless)
+    # Have to request all fields that you want returned (see DICOM std table C.6-5)
     q = orthanc.QueryRemote(remote, query={'StudyDate': study_date,
                                            'AccessionNumber':'',
-                                           'InstitutionName':'',
-                                           'ModalitiesInStudy':'CT',
+                                           'ModalitiesInStudy':modality,
                                            'PatientBirthDate':'',
+                                           'NumberOfSeries':'',
                                            'PatientID':'',
                                            'PatientName':'',
                                            'PatientSex':'',
-                                           'StudyTime':'',
-                                           'StationName':'',
+                                           'ReferringPhysicianName': '',
+                                           'StudyTime':study_time,
                                            'StudyDescription':''})
     logging.debug(pprint.pformat(q))
 
     answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
 
+    # logging.debug(pprint.pformat(answers))
+    # logging.debug("Found {0} answers".format(len(answers)))
+
     host = '{0}:{1}/modalities/{2}'.format(orthanc.session.hostname, orthanc.session.port, remote)
+    # accessions = []
 
     for a in answers:
         r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'],a))
         r = simplify_tags(r)
 
-        r['ID'] = uuid.uuid5(splunk.base_uuid, str(r['StudyInstanceUID']))
-
-        logging.debug('Type of ID: {0}'.format(type(r['ID'])))
+        s = hashlib.sha1("{0}{1}".format(str(r['PatientID']), str(r['StudyInstanceUID']))).hexdigest()
+        r['ID'] = '-'.join(s[i:i+8] for i in range(0, len(s), 8))
 
         logging.debug(pprint.pformat(r))
 
         if not str(r['ID']) in existing_items:
             logging.debug('Adding item {0}'.format(r['ID']))
             splunk.AddItem(r, src=orthanc, host=host)
+            # accessions.append(r['AccessionNumber'])
         else:
             logging.debug('Skipping item {0}'.format(r['ID']))
+
+    # logging.debug(accessions)
+    # logging.debug("Found {0} studies to index".format(len(accessions)))
+    #
+    # return len(accessions)
+
+
+def UpdateRemoteSeriesIndex( orthanc, remote, splunk, **kwargs ):
+
+    # Query the study index to get a list of candidate accession numbers
+    # Query the series index to eliminate series that have already been indexed
+    # Query remote for each candidate accession number to get basic DICOM tags
+
+    orthanc.level = 'series'
+    splunk.index = splunk.index_names['remote_series']
+
+    # existing_items = splunk.ListItems()
+    # logging.debug(existing_items)
+
+    accession_number = kwargs.get('accession_number')
+
+    # Have to request all fields that you want returned (see DICOM std table C.6-5)
+    q = orthanc.QueryRemote(remote, query={'StudyDate': '',
+                                           'AccessionNumber':accession_number,
+                                           'InstitutionName':'',
+                                           'Modality':'',
+                                           'ModalitiesInStudy':'',
+                                           'PatientBirthDate':'',
+                                           'NumberOfSeries':'',
+                                           'PatientID':'',
+                                           'PatientName':'',
+                                           'PatientSex':'',
+                                           'ReferringPhysicianName': '',
+                                           'StationName':'',
+                                           'SeriesDescription':'',
+                                           'StudyTime':'',
+                                           'StudyDescription':''})
+    logging.debug(pprint.pformat(q))
+
+    answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
+
+    host = '{0}:{1}/modalities/{2}'.format(orthanc.session.hostname, orthanc.session.port, remote)
+    # accessions = []
+
+    r = None
+
+    # Review all series for this study
+    for a in answers:
+        r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'],a))
+        r = simplify_tags(r)
+
+        logging.debug(pprint.pformat(r))
+
+        # r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), data='DEATHSTAR')
+
+    siuid = r['SeriesInstanceUID']
+    orthanc.level = 'Instance'
+
+    # Have to request all fields that you want returned (see DICOM std table C.6-5)
+    q = orthanc.QueryRemote(remote, query={'StudyDate': '',
+                                           'AccessionNumber':'',
+                                           'InstitutionName':'',
+                                           'Modality':'',
+                                           'PatientBirthDate':'',
+                                           'NumberOfSeries':'',
+                                           'PatientID':'',
+                                           'PatientName':'',
+                                           'PatientSex':'',
+                                           'ReferringPhysicianName':'',
+                                           'StationName':'',
+                                           'SeriesDescription':'',
+                                           'SeriesInstanceUID': siuid,
+                                           'StudyTime':'',
+                                           'StudyDescription':''})
+    logging.debug(pprint.pformat(q))
+
+
+    answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
+
+    # Review all instances in this series
+    for a in answers:
+        r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'], a))
+        r = simplify_tags(r)
+
+        logging.debug(pprint.pformat(r))
+
+        # r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), data='DEATHSTAR')
+
+
+    # Pull a single instance for review (this doesn't work)
+    orthanc.level = 'instance'
+
+    stiuid = r['StudyInstanceUID']
+    siuid = r['SeriesInstanceUID']
+    sopiuid = r['SOPInstanceUID']
+
+    r = orthanc.RetrieveFromRemote(remote, resources=[{
+                                                         'StudyInstanceUID':stiuid,
+                                                         'SeriesInstanceUID':siuid,
+                                                         'SOPInstanceUID': sopiuid
+                                                       }])
+
+    logging.debug(pprint.pformat(r))
 
 
 def UpdateDoseReports( orthanc, splunk ):
