@@ -1,5 +1,5 @@
 from SessionWrapper import Session
-from StructuredTags import simplify_tags
+from StructuredTags import simplify_tags, normalize_ctdi_tags
 import collections
 import logging
 from bs4 import BeautifulSoup
@@ -361,12 +361,13 @@ def UpdateDoseReports( orthanc, splunk ):
 
     # List of candidate series out of Splunk/dicom_series
     splunk.index = splunk.index_names['series']
-    q = "search index=dicom_series SeriesNumber = 997 OR SeriesNumber = 502 | table ID"
+    # Can limit the search with "earliest=-2d" for example
+    q = "search index={0} SeriesNumber = 997 OR SeriesNumber = 502 | table ID".format(splunk.index)
     candidates = splunk.ListItems(q)
 
     # Which ones are already available in Splunk/dose_records (looking at ParentSeriesID)
     splunk.index = splunk.index_names['dose']
-    q = "search index=dose_reports | table ParentSeriesID"
+    q = "search index={0} | table ParentSeriesID".format(splunk.index)
     indexed = splunk.ListItems(q)
 
     items = SetDiff(candidates, indexed)
@@ -385,6 +386,9 @@ def UpdateDoseReports( orthanc, splunk ):
         tags = orthanc.GetItem(instance, 'tags')
         # Add IDs
         tags['ParentSeriesID'] = item
+
+        # Normalize missing CTDIvol tags
+        tags = normalize_ctdi_tags(tags)
 
         logging.debug(pprint.pformat(tags))
 

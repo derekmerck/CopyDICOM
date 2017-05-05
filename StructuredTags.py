@@ -146,6 +146,30 @@ def simplify_tags(tags):
     return tags
 
 
+# This allows us to standardize how ctdi keys are included in dose reports, they exist in Siemens reports
+# but are _not_ present on GE machines, which makes the data difficult to parse with Splunk
+def normalize_ctdi_tags(tags):
+
+    try:
+        exposures = tags["X-Ray Radiation Dose Report"]["CT Acquisition"]
+
+        for exposure in exposures:
+
+            if "CT Dose" not in exposure:
+                logging.debug("Normalizing missing CT Dose key")
+                exposure["CT Dose"] = {'Mean CTDIvol': 0}
+            else:
+                # logging.debug("CT Dose key already exists!")
+                pass
+
+        exit()
+
+    except:
+        pass
+
+    return tags
+
+
 if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
