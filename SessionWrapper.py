@@ -37,6 +37,7 @@ class Session(requests.Session):
         return urljoin("{0}://{1}:{2}".format(self.scheme, self.hostname, self.port), self.path, *loc)
 
     def do_return(self, r):
+
         # Return dict if possible, but content otherwise (for image data)
         if r.status_code is not 200 and r.status_code is not 201:
             self.logger.warn('Session returned error %s', r.status_code)
@@ -53,8 +54,12 @@ class Session(requests.Session):
         return ret
 
     def do_get(self, loc, params={}):
-        self.logger.debug(self.get_url(loc))
+        # self.logger.debug(self.get_url(loc))
         r = self.get(self.get_url(loc), headers=self.headers, verify=False, params=params)
+        return self.do_return(r)
+
+    def do_delete(self, loc, params={}):
+        r = self.delete(self.get_url(loc), headers=self.headers, verify=False, params=params)
         return self.do_return(r)
 
     def do_put(self, loc, data, headers={}):
@@ -73,6 +78,8 @@ class Session(requests.Session):
         if type(data) is dict or type(data) is collections.OrderedDict:
             headers.update({'content-type': 'application/json'})
             data = json.dumps(data, cls=DateTimeEncoder)
+        elif isinstance(data, str):
+            headers.update({'content-type': 'text/plain'})
 
         r = self.post(self.get_url(loc), data=data, headers=headers, verify=False)
 

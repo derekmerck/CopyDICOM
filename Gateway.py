@@ -60,6 +60,15 @@ class OrthancGateway(Gateway):
         logging.info("Found {0} candidate {1}.".format(len(r), self.level))
         return r
 
+    def DropAll(self):
+        self.level = 'patients'
+        items = self.ListItems()
+        for item in items:
+            self.DeleteItem(item)
+
+    def DeleteItem(self, item):
+        self.session.do_delete('{0}/{1}'.format(self.level, item))
+
     def GetItem(self, item, dtype="tags"):
 
         r = None
@@ -186,9 +195,9 @@ def CopyNewItems( src, dest, items, dtype='tags' ):
     CopyItems(src, dest, new_items, dtype)
 
 
-def UpdateSeriesIndex( orthanc, splunk ):
+def UpdateSeriesIndex( orthanc, splunk, splunk_index='series' ):
     orthanc.level = 'series'
-    splunk.index = splunk.index_names['series']
+    splunk.index = splunk.index_names[splunk_index]
     items = orthanc.ListItems()
 
     logging.debug('Candidate items:')
@@ -265,96 +274,113 @@ def UpdateRemoteSeriesIndex( orthanc, remote, splunk, **kwargs ):
     # Query the series index to eliminate series that have already been indexed
     # Query remote for each candidate accession number to get basic DICOM tags
 
-    orthanc.level = 'series'
-    splunk.index = splunk.index_names['remote_series']
+    def get_remote_instance_ids(stuid, seruid, retrieve=False):
 
-    # existing_items = splunk.ListItems()
-    # logging.debug(existing_items)
+        orthanc.level = 'instances'
+        q = orthanc.QueryRemote(remote, query={'StudyInstanceUID': stuid,
+                                               'SeriesInstanceUID': seruid})
 
-    accession_number = kwargs.get('accession_number')
+        logging.debug("Instance level responses")
+        logging.debug(pprint.pformat(q))
 
-    # Have to request all fields that you want returned (see DICOM std table C.6-5)
-    q = orthanc.QueryRemote(remote, query={'StudyDate': '',
-                                           'AccessionNumber':accession_number,
-                                           'InstitutionName':'',
-                                           'Modality':'',
-                                           'ModalitiesInStudy':'',
-                                           'PatientBirthDate':'',
-                                           'NumberOfSeries':'',
-                                           'PatientID':'',
-                                           'PatientName':'',
-                                           'PatientSex':'',
-                                           'ReferringPhysicianName': '',
-                                           'StationName':'',
-                                           'SeriesDescription':'',
-                                           'StudyTime':'',
-                                           'StudyDescription':''})
-    logging.debug(pprint.pformat(q))
+        answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
 
-    answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
+        instuids = []
 
-    host = '{0}:{1}/modalities/{2}'.format(orthanc.session.hostname, orthanc.session.port, remote)
-    # accessions = []
+        # Review all instances for this study
+        for a in answers:
+            r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'], a))
+            logging.debug(pprint.pformat(r))
 
-    r = None
+            instuid = r['SOPInstanceUID']
+            instuids.append(instuid)
 
-    # Review all series for this study
-    for a in answers:
-        r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'],a))
-        r = simplify_tags(r)
+            if retrieve:
+                r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), 'DEATHSTAR')
 
-        logging.debug(pprint.pformat(r))
+                # r = orthanc.RetrieveFromRemote(remote, resources=[{'StudyInstanceUID': stuid,
+                #                                                    'SeriesInstanceUID': seruid,
+                #                                                    'SOPInstanceUID': instuid,
+                #                                                    'MediaStorageSOPInstanceUID': instuid
+                #                                                    }])
+                logging.debug(pprint.pformat(r))
 
-        # r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), data='DEATHSTAR')
+        return instuids
 
-    siuid = r['SeriesInstanceUID']
-    orthanc.level = 'Instance'
+    def get_remote_series_ids(stuid, retrieve=False):
 
-    # Have to request all fields that you want returned (see DICOM std table C.6-5)
-    q = orthanc.QueryRemote(remote, query={'StudyDate': '',
-                                           'AccessionNumber':'',
-                                           'InstitutionName':'',
-                                           'Modality':'',
-                                           'PatientBirthDate':'',
-                                           'NumberOfSeries':'',
-                                           'PatientID':'',
-                                           'PatientName':'',
-                                           'PatientSex':'',
-                                           'ReferringPhysicianName':'',
-                                           'StationName':'',
-                                           'SeriesDescription':'',
-                                           'SeriesInstanceUID': siuid,
-                                           'StudyTime':'',
-                                           'StudyDescription':''})
-    logging.debug(pprint.pformat(q))
+        orthanc.level = 'series'
+        q = orthanc.QueryRemote(remote, query={'StudyInstanceUID': stuid})
 
+        logging.debug("Series level responses")
+        logging.debug(pprint.pformat(q))
 
-    answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
+        answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
 
-    # Review all instances in this series
-    for a in answers:
-        r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'], a))
-        r = simplify_tags(r)
+        seruids = []
 
-        logging.debug(pprint.pformat(r))
+        # Review all studies for these conditions
+        for a in answers:
+            r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'], a))
+            logging.debug(pprint.pformat(r))
 
-        # r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), data='DEATHSTAR')
+            seruids.append(r['SeriesInstanceUID'])
 
+            if retrieve:
+                r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), 'DEATHSTAR')
+                logging.debug(pprint.pformat(r))
 
-    # Pull a single instance for review (this doesn't work)
-    orthanc.level = 'instance'
+        return seruids
 
-    stiuid = r['StudyInstanceUID']
-    siuid = r['SeriesInstanceUID']
-    sopiuid = r['SOPInstanceUID']
+    def get_remote_study_ids(**kwargs):
 
-    r = orthanc.RetrieveFromRemote(remote, resources=[{
-                                                         'StudyInstanceUID':stiuid,
-                                                         'SeriesInstanceUID':siuid,
-                                                         'SOPInstanceUID': sopiuid
-                                                       }])
+        study_date = kwargs.get('study_date', '')
+        study_time = kwargs.get('study_time', '')
+        modality = kwargs.get('modality', 'CT')
+        accession_number = kwargs.get('accession_number', '')
+        retrieve = kwargs.get('retrieve', False)
 
-    logging.debug(pprint.pformat(r))
+        orthanc.level = 'study'
+        q = orthanc.QueryRemote(remote, query={'StudyDate': study_date,
+                                               'StudyTime': study_time,
+                                               'AccessionNumber': accession_number,
+                                               'ModalitiesInStudy': modality})
+
+        logging.debug("Study level responses")
+        logging.debug(pprint.pformat(q))
+
+        answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
+
+        stuids = []
+
+        # Review all series for this study
+        for a in answers:
+            r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'], a))
+            logging.debug(pprint.pformat(r))
+
+            stuids.append(r['StudyInstanceUID'])
+
+            if retrieve:
+                r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), 'DEATHSTAR')
+                logging.debug(pprint.pformat(r))
+
+        return stuids
+
+    stuids = get_remote_study_ids(retrieve=False, **kwargs)
+    logging.debug(stuids)
+
+    seruids = get_remote_series_ids(stuids[0])
+    logging.debug(seruids)
+
+    for seruid in seruids:
+        instuids = get_remote_instance_ids(stuids[0], seruid, retrieve=True)
+        logging.debug(instuids)
+
+    # UpdateSeriesIndex(orthanc, splunk, 'remote_series')
+    #
+    # # Now scrub these studies
+    # orthanc.DropAll()
+
 
 
 def UpdateDoseReports( orthanc, splunk ):

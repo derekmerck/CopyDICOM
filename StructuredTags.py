@@ -111,8 +111,11 @@ def simplify_tags(tags):
         tags[key] = value
 
     # Convert DICOM DateTimes into ISO DateTimes
-    t = get_datetime(tags['StudyDate'] + tags['StudyTime'])
-    tags['StudyDateTime'] = t
+    try:
+        t = get_datetime(tags['StudyDate'] + tags['StudyTime'])
+        tags['StudyDateTime'] = t
+    except KeyError:
+        pass
 
     try:
         t = get_datetime(tags['SeriesDate'] + tags['SeriesTime'])
