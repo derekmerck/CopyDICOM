@@ -70,7 +70,10 @@ def simplify_structured_tags(tags):
             value = get_datetime(item['DateTime'])
             # logging.debug('Found date/time value')
         elif type_ == 'CODE':
-            value = item['ConceptCodeSequence'][0]['CodeMeaning']
+            try:
+                value = item['ConceptCodeSequence'][0]['CodeMeaning']
+            except:
+                value = "UNKNOWN"
             # logging.debug('Found coded value')
         elif type_ == "CONTAINER":
             value = simplify_structured_tags(item)
