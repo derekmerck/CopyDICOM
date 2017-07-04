@@ -77,6 +77,7 @@ class OrthancGateway(Gateway):
                 r = self.session.do_get('{0}/{1}/tags?simplify'.format(self.level, item))
             else:
                 r = self.session.do_get('{0}/{1}/shared-tags?simplify'.format(self.level, item))
+
             r = simplify_tags(r)
             # Add item ID for later reference
             r['ID'] = item
@@ -205,7 +206,41 @@ def UpdateSeriesIndex( orthanc, splunk, splunk_index='series' ):
 
     CopyNewItems( orthanc, splunk, items, 'tags' )
 
-
+    # def get_remote_study_ids(**kwargs):
+    #
+    #     study_date = kwargs.get('study_date', '')
+    #     study_time = kwargs.get('study_time', '')
+    #     modality = kwargs.get('modality', 'CT')
+    #     accession_number = kwargs.get('accession_number', '')
+    #     retrieve = kwargs.get('retrieve', False)
+    #     stuid = kwargs.get('stuid', '')
+    #
+    #     orthanc.level = 'study'
+    #     q = orthanc.QueryRemote(remote, query={'StudyInstanceUID': stuid,
+    #                                            'StudyDate': study_date,
+    #                                            'StudyTime': study_time,
+    #                                            'AccessionNumber': accession_number,
+    #                                            'ModalitiesInStudy': modality})
+    #
+    #     logging.debug("Study level responses")
+    #     logging.debug(pprint.pformat(q))
+    #
+    #     answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
+    #
+    #     stuids = []
+    #
+    #     # Review all series for this study
+    #     for a in answers:
+    #         r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'], a))
+    #         logging.debug(pprint.pformat(r))
+    #
+    #         stuids.append(r['StudyInstanceUID'])
+    #
+    #         if retrieve:
+    #             r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), 'DEATHSTAR')
+    #             logging.debug(pprint.pformat(r))
+    #
+    #     return stuids
 
 # Doing this hour-by-hour results in a complete list of studies for the day
 # DOES include outside studies
@@ -322,7 +357,7 @@ def UpdateRemoteSeriesIndex( orthanc, remote, splunk, **kwargs ):
         # Review all studies for these conditions
         for a in answers:
             r = orthanc.session.do_get('queries/{0}/answers/{1}/content?simplify'.format(q['ID'], a))
-            logging.debug(pprint.pformat(r))
+            logging.debug(pprint.format(r))
 
             seruids.append(r['SeriesInstanceUID'])
 
@@ -339,9 +374,11 @@ def UpdateRemoteSeriesIndex( orthanc, remote, splunk, **kwargs ):
         modality = kwargs.get('modality', 'CT')
         accession_number = kwargs.get('accession_number', '')
         retrieve = kwargs.get('retrieve', False)
+        stuid = kwargs.get('stuid', '')
 
         orthanc.level = 'study'
-        q = orthanc.QueryRemote(remote, query={'StudyDate': study_date,
+        q = orthanc.QueryRemote(remote, query={'StudyInstanceUID': stuid,
+                                               'StudyDate': study_date,
                                                'StudyTime': study_time,
                                                'AccessionNumber': accession_number,
                                                'ModalitiesInStudy': modality})
@@ -352,6 +389,7 @@ def UpdateRemoteSeriesIndex( orthanc, remote, splunk, **kwargs ):
         answers = orthanc.session.do_get('queries/{0}/answers/'.format(q['ID']))
 
         stuids = []
+        accessions = []
 
         # Review all series for this study
         for a in answers:
@@ -359,15 +397,18 @@ def UpdateRemoteSeriesIndex( orthanc, remote, splunk, **kwargs ):
             logging.debug(pprint.pformat(r))
 
             stuids.append(r['StudyInstanceUID'])
+            accessions.append(r['AccessionNumber'])
 
             if retrieve:
                 r = orthanc.session.do_post('queries/{0}/answers/{1}/retrieve'.format(q['ID'], a), 'DEATHSTAR')
                 logging.debug(pprint.pformat(r))
 
-        return stuids
+        return stuids, accessions
 
-    stuids = get_remote_study_ids(retrieve=False, **kwargs)
+    stuids, accessions = get_remote_study_ids(retrieve=False, **kwargs)
     logging.debug(stuids)
+
+    return(accessions[0])
 
     seruids = get_remote_series_ids(stuids[0])
     logging.debug(seruids)

@@ -5,7 +5,7 @@ from posixpath import join as urljoin
 from urlparse import urlsplit
 from datetime import datetime
 import collections
-import uuid
+from hashlib import sha256
 
 # from requests.packages.urllib3.util import Retry
 from requests.adapters import HTTPAdapter
@@ -71,8 +71,8 @@ class Session(requests.Session):
             def default(self, obj):
                 if isinstance(obj, datetime):
                     return obj.isoformat()
-                if isinstance(obj, uuid.UUID):
-                    return str(obj)
+                if hasattr(obj, 'hexdigest'):
+                    return obj.hexdigest()
                 return json.JSONEncoder.default(self, obj)
 
         if type(data) is dict or type(data) is collections.OrderedDict:

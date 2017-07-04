@@ -144,8 +144,13 @@ def simplify_tags(tags):
     if not tags.get('InstanceCreationDateTime'):
         if tags.get('SeriesDateTime'):
             tags['InstanceCreationDateTime'] = tags['SeriesDateTime']
-        else:
+        elif tags.get('StudyDateTime'):
             tags['InstanceCreationDateTime'] = tags['StudyDateTime']
+        elif tags.get('ObservationDateTime'):
+            tags['InstanceCreationDateTime'] = tags['ObservationDateTime']
+        else:
+            logging.warn('No creation date could be parsed from instance, series, study, or observation.')
+            pass
 
     # logging.info(pformat(tags))
 
@@ -168,10 +173,15 @@ def normalize_ctdi_tags(tags):
                 # logging.debug("CT Dose key already exists!")
                 pass
 
-        exit()
-
     except:
         pass
+
+    # Make sure that a StationName is present
+    if "StationName" not in tags:
+        try:
+            tags["StationName"] = tags["DeviceSerialNumber"]
+        except:
+            pass
 
     return tags
 
@@ -180,25 +190,16 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
-    # items = ['dffa86e4-77265848-38fc0072-e9566534-d3d06bc8',
-    #          'ab557aef-637dacbd-9b6677ef-a5890f51-a1992a49',
-    #          '7dcd0529-8e5bfe27-118509b8-a37775f9-d780c34a',
-    #          '07e06a17-44ae190d-43513b70-31566585-7928a9ce',
-    #          '900ca1e1-331a5cac-427a8455-36a7b2d7-626ac3db',
-    #          'e84ddaf2-0c0eb06c-bfd2371b-f42bb1a4-029c9ba1']
-    #
-    # for item in items:
-    #     tags = get_tags(item)
-
-    items = ["dffa", 'ab55', '7dcd', '07e0', '900c', 'e84d']
+    items = ["vir_sdr_tags"]
 
     for item in items:
 
-        with open('samples/{0}.json'.format(item)) as f:
+        with open('/Users/derek/Desktop/{0}.json'.format(item)) as f:
             tags = json.load(f)
 
         tags = simplify_tags(tags)
+        tags = normalize_ctdi_tags(tags)
 
-        with open('samples/{0}-simple.json'.format(item), 'w') as f:
+        with open('/Users/derek/Desktop/{0}-simple.json'.format(item), 'w') as f:
             json.dump(tags, f, indent=3, cls=DateTimeEncoder, sort_keys=True)
 
