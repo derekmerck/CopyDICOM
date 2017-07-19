@@ -197,7 +197,10 @@ def normalize_ctdi_tags(tags):
         try:
             tags["StationName"] = tags["DeviceSerialNumber"]
         except:
-            pass
+            try:
+                tags["StationName"] = tags["X-Ray Radiation Dose Report"]["Device Observer UID"]
+            except:
+                logging.debug('No station name identifed')
 
     return tags
 
