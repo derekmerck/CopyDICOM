@@ -14,7 +14,6 @@ class Gateway(object):
         # Create session wrapper
         address = kwargs.get('address')
         self.session = Session(address)
-        # self.base_uuid = uuid.uuid3(uuid.NAMESPACE_DNS, 'cirr.lifespan.org')
 
     def ListItems(self, condition=None, *args, **kwargs):
         raise NotImplementedError

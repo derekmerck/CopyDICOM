@@ -18,8 +18,15 @@ def get_datetime(s):
         # GE Scanner aggregated dt format
         ts = datetime.strptime(s, "%Y%m%d%H%M%S")
     except ValueError:
-        # Siemens scanners use a slightly different aggregated format with fractional seconds
-        ts = datetime.strptime(s, "%Y%m%d%H%M%S.%f")
+
+        try:
+            # Siemens scanners use a slightly different aggregated format with fractional seconds
+            ts = datetime.strptime(s, "%Y%m%d%H%M%S.%f")
+
+        except ValueError:
+            logging.debug("Can't parse date time string: {0}".format(s))
+            ts = datetime.now()
+
     return ts
 
 
@@ -57,7 +64,8 @@ def simplify_structured_tags(tags):
             logging.debug('No key or no type, returning')
             return
 
-        if type_ == "TEXT":
+        if type_ == "TEXT" or type_ == "IMAGE":
+            # "IMAGE" encodes a UUID
             value = item['TextValue']
             # logging.debug('Found text value')
         elif type_ == "NUM":
@@ -82,7 +90,7 @@ def simplify_structured_tags(tags):
             logging.debug("Unknown ValueType (" + item['ValueType'] + ")")
 
         if data.get(key):
-            logging.debug('Key already exists (' + key + ')')
+            # logging.debug('Key already exists (' + key + ')')
             if isinstance(data.get(key), list):
                 value = data[key] + [value]
                 # logging.debug('Already a list, so appending')
@@ -188,9 +196,9 @@ def normalize_ctdi_tags(tags):
 
 if __name__ == "__main__":
 
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
-    items = ["vir_sdr_tags"]
+    items = ["vir_tags"]
 
     for item in items:
 
