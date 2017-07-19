@@ -64,10 +64,18 @@ def simplify_structured_tags(tags):
             logging.debug('No key or no type, returning')
             return
 
-        if type_ == "TEXT" or type_ == "IMAGE":
-            # "IMAGE" encodes a UUID
+        if type_ == "TEXT":
             value = item['TextValue']
             # logging.debug('Found text value')
+
+        elif type_ == "IMAGE":
+            # "IMAGE" sometimes encodes a text UUID, sometimes a refsop
+            try:
+                value = item['TextValue']
+            except KeyError:
+                logging.debug('No text value for "IMAGE", returning')
+                return
+
         elif type_ == "NUM":
             value = float(item['MeasuredValueSequence'][0]['NumericValue'])
             # logging.debug('Found numeric value')
@@ -198,7 +206,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.DEBUG)
 
-    items = ["vir_tags"]
+    items = ["vir_tags2"]
 
     for item in items:
 
