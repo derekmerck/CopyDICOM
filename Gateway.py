@@ -111,7 +111,8 @@ class SplunkGateway(Gateway):
                                       {'series': 'dicom_series',
                                        'dose': 'dose_reports',
                                        'remote_studies': 'pacs_studies',
-                                       'remote_series': 'pacs_series'})
+                                       'remote_series': 'pacs_series',
+                                       'patient_dims': 'patient_dims'})
 
     def ListItems(self, condition=None, *args, **kwargs):
 
